@@ -1,0 +1,19 @@
+{
+  "name": "corgi-endless-runner",
+  "version": "1.0.0",
+  "description": "HTML5 Canvas 2D Corgi Endless Runner Game",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "node --test tests/unit/**/*.test.js",
+    "test:e2e": "vitest run tests/e2e",
+    "test:tier1": "vitest run tests/e2e/tier1_feature_coverage.test.js",
+    "test:tier2": "vitest run tests/e2e/tier2_boundary_corner.test.js",
+    "test:tier3": "vitest run tests/e2e/tier3_cross_feature.test.js",
+    "test:tier4": "vitest run tests/e2e/tier4_real_world.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0",
+    "vitest": "^1.4.0"
+  }
+}

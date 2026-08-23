@@ -1,0 +1,192 @@
+/* Reset & modern styling system */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: #080911;
+  color: #e2e8f0;
+  font-family: 'Outfit', sans-serif;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Game Container - responsive 16:9 aspect ratio */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 56.25vw; /* 9 / 16 = 0.5625 */
+  max-width: 177.78vh; /* 16 / 9 = 1.7778 */
+  max-height: 100vh;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 80px rgba(99, 102, 241, 0.15);
+  background-color: #0c0d16;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Canvas styling */
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* UI Overlay container */
+#ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+#ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* Glassmorphism Overlays */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(8, 9, 20, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 40px;
+  text-align: center;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.hidden {
+  display: none !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Typography styles */
+.overlay h1 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 2.2rem;
+  line-height: 1.4;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #ff8c00 0%, #ff007f 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(255, 140, 0, 0.3));
+  text-transform: uppercase;
+}
+
+.overlay h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 2rem;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(0, 242, 254, 0.3));
+  text-transform: uppercase;
+}
+
+.overlay p {
+  font-size: 1.1rem;
+  color: #94a3b8;
+  max-width: 500px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+.overlay p.controls {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 0.95rem;
+  color: #cbd5e1;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* Premium Buttons */
+button {
+  padding: 14px 32px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  margin-top: 25px;
+  background: linear-gradient(135deg, #ff8c00 0%, #ff5e00 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 30px;
+  box-shadow: 0 10px 20px -10px rgba(255, 140, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #ffa500 0%, #ff7300 100%);
+  box-shadow: 0 15px 25px -10px rgba(255, 140, 0, 0.6), 0 0 15px rgba(255, 140, 0, 0.3);
+}
+
+button:active {
+  transform: translateY(1px);
+  box-shadow: 0 5px 10px -5px rgba(255, 140, 0, 0.5);
+}
+
+/* Game Over Stats styling */
+#game-over-screen p {
+  font-size: 1.3rem;
+  color: #f1f5f9;
+  margin-bottom: 8px;
+}
+
+#game-over-screen span {
+  font-family: 'Press Start 2P', monospace;
+  color: #ff007f;
+  font-size: 1.2rem;
+  margin-left: 8px;
+}
+
+/* HUD Overlay on Canvas */
+#hud {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(8, 9, 20, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.65rem;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
