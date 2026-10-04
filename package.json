@@ -4,6 +4,7 @@
   "description": "HTML5 Canvas 2D Corgi Endless Runner Game",
   "type": "module",
   "scripts": {
+    "start": "node scripts/serve.mjs",
     "test": "vitest run",
     "test:unit": "node --test tests/unit/**/*.test.js",
     "test:e2e": "vitest run tests/e2e",

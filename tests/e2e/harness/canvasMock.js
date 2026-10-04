@@ -105,6 +105,48 @@ export class CanvasMock2D {
     return { width: (text || '').length * 10 };
   }
 
+  // --- Additional standard Canvas 2D API surface used by the renderer ---
+
+  setTransform(a, b, c, d, e, f) {
+    this.drawCalls.push({ type: 'setTransform', args: [a, b, c, d, e, f] });
+  }
+
+  resetTransform() {
+    this.drawCalls.push({ type: 'resetTransform' });
+  }
+
+  ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle) {
+    this.drawCalls.push({ type: 'ellipse', x, y, radiusX, radiusY, rotation, startAngle, endAngle });
+  }
+
+  quadraticCurveTo(cpx, cpy, x, y) {
+    this.drawCalls.push({ type: 'quadraticCurveTo', cpx, cpy, x, y });
+  }
+
+  bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) {
+    this.drawCalls.push({ type: 'bezierCurveTo', cp1x, cp1y, cp2x, cp2y, x, y });
+  }
+
+  rect(x, y, w, h) {
+    this.drawCalls.push({ type: 'rect', x, y, w, h });
+  }
+
+  clip() {
+    this.drawCalls.push({ type: 'clip' });
+  }
+
+  strokeText(text, x, y) {
+    this.drawCalls.push({ type: 'strokeText', text, x, y, strokeStyle: this.strokeStyle, font: this.font });
+  }
+
+  createLinearGradient() {
+    return { addColorStop() {} };
+  }
+
+  createRadialGradient() {
+    return { addColorStop() {} };
+  }
+
   clearLog() {
     this.drawCalls = [];
   }
