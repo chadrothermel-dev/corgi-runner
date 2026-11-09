@@ -105,6 +105,67 @@ export class CanvasMock2D {
     return { width: (text || '').length * 10 };
   }
 
+  // --- Additional Canvas 2D API surface used by the enhanced renderer ---
+  createLinearGradient(x0, y0, x1, y1) {
+    return { type: 'linearGradient', x0, y0, x1, y1, stops: [], addColorStop(o, c) { this.stops.push([o, c]); } };
+  }
+
+  createRadialGradient(x0, y0, r0, x1, y1, r1) {
+    return { type: 'radialGradient', x0, y0, r0, x1, y1, r1, stops: [], addColorStop(o, c) { this.stops.push([o, c]); } };
+  }
+
+  createPattern() {
+    return null;
+  }
+
+  quadraticCurveTo(cpx, cpy, x, y) {
+    this.drawCalls.push({ type: 'quadraticCurveTo', cpx, cpy, x, y });
+  }
+
+  bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y) {
+    this.drawCalls.push({ type: 'bezierCurveTo', cp1x, cp1y, cp2x, cp2y, x, y });
+  }
+
+  arcTo(x1, y1, x2, y2, radius) {
+    this.drawCalls.push({ type: 'arcTo', x1, y1, x2, y2, radius });
+  }
+
+  ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle) {
+    this.drawCalls.push({ type: 'ellipse', x, y, radiusX, radiusY, rotation, startAngle, endAngle });
+  }
+
+  rect(x, y, w, h) {
+    this.drawCalls.push({ type: 'rect', x, y, w, h });
+  }
+
+  clip() {
+    this.drawCalls.push({ type: 'clip' });
+  }
+
+  setTransform(a, b, c, d, e, f) {
+    this.drawCalls.push({ type: 'setTransform', a, b, c, d, e, f });
+  }
+
+  resetTransform() {
+    this.drawCalls.push({ type: 'resetTransform' });
+  }
+
+  transform(a, b, c, d, e, f) {
+    this.drawCalls.push({ type: 'transform', a, b, c, d, e, f });
+  }
+
+  strokeText(text, x, y) {
+    this.drawCalls.push({ type: 'strokeText', text, x, y, strokeStyle: this.strokeStyle, font: this.font });
+  }
+
+  setLineDash(segments) {
+    this.lineDash = segments;
+  }
+
+  getLineDash() {
+    return this.lineDash || [];
+  }
+
   clearLog() {
     this.drawCalls = [];
   }

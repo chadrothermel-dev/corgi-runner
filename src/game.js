@@ -4,15 +4,25 @@ import { Collision } from './collision.js';
 import { ParticleSystem } from './particles.js';
 import { AudioSystem } from './audio.js';
 import { Storage } from './storage.js';
+import { Background } from './background.js';
+import { Effects } from './effects.js';
+
+const MILESTONE_EVERY = 500;
 
 export class CorgiRunnerGame {
   constructor(canvasElement) {
     this.canvas = canvasElement || (typeof document !== 'undefined' ? document.querySelector('canvas') : null);
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
 
+    // Logical resolution: gameplay always runs in these units, whatever the
+    // backing-store size of the canvas (see setRenderScale for HiDPI).
+    this.viewW = this.canvas ? this.canvas.width : 800;
+    this.viewH = this.canvas ? this.canvas.height : 450;
+    this.renderScale = 1;
+
     this.groundY = 350;
     this.state = 'START'; // 'START', 'PLAYING', 'PAUSED', 'GAMEOVER'
-    
+
     this.score = 0;
     this.highScore = Storage.getHighScore();
 
@@ -22,49 +32,20 @@ export class CorgiRunnerGame {
     this.speedScaleRate = 10;
 
     this.player = new CorgiPlayer(this.groundY);
-    this.entityManager = new EntityManager(this.canvas ? this.canvas.width : 800, this.groundY);
+    this.entityManager = new EntityManager(this.viewW, this.groundY);
     this.particles = new ParticleSystem();
+    this.background = new Background(this.viewW, this.viewH, this.groundY);
+    this.effects = new Effects(this.viewW, this.viewH);
 
     this.keysHeld = {};
     this.loopId = null;
-
-    // Parallax background state
-    this.bgScroll = 0;
-    this.cloudScroll = 0;
-    this.hillScroll = 0;
-    this.mountainScroll = 0;
-    this.groundScroll = 0;
-
-    // Generate static cloud positions
-    this.clouds = [];
-    for (let i = 0; i < 6; i++) {
-      this.clouds.push({
-        x: Math.random() * 900,
-        y: 30 + Math.random() * 100,
-        w: 60 + Math.random() * 80,
-        h: 20 + Math.random() * 20,
-        speed: 0.1 + Math.random() * 0.15
-      });
-    }
-
-    // Generate mountain peaks
-    this.mountains = [];
-    for (let i = 0; i < 5; i++) {
-      this.mountains.push({
-        x: i * 200 + Math.random() * 40,
-        peakH: 60 + Math.random() * 50,
-        w: 140 + Math.random() * 80
-      });
-    }
-
-    // Generate hill shapes
-    this.hills = [];
-    for (let i = 0; i < 7; i++) {
-      this.hills.push({
-        x: i * 150 + Math.random() * 30,
-        r: 40 + Math.random() * 30,
-      });
-    }
+    this.dustTimer = 0;
+    this.nextMilestone = MILESTONE_EVERY;
+    this.isNewBest = false;
+    this.bestAtStart = this.highScore;
+    this.passedBest = false;
+    this.lastShownScore = -1;
+    this.lastShownHigh = -1;
 
     this.initDOM();
     this.bindEvents();
@@ -84,6 +65,12 @@ export class CorgiRunnerGame {
     this.startBtn = document.querySelector('#startBtn') || document.querySelector('#start-btn');
     this.resumeBtn = document.querySelector('#resumeBtn') || document.querySelector('#resume-btn');
     this.restartBtn = document.querySelector('#restartBtn') || document.querySelector('#restart-btn');
+
+    // Optional enhanced-UI elements (absent in minimal markup)
+    this.muteBtn = document.querySelector('#mute-btn');
+    this.newBestEl = document.querySelector('#new-best');
+    this.speedFill = document.querySelector('#speed-fill');
+    this.syncMuteButton();
   }
 
   bindEvents() {
@@ -106,17 +93,27 @@ export class CorgiRunnerGame {
       this.canvas.addEventListener('touchend', this.touchendBound);
     }
 
+    const blurAfter = (fn) => (e) => {
+      AudioSystem.unlock();
+      fn();
+      if (e && e.currentTarget && typeof e.currentTarget.blur === 'function') e.currentTarget.blur();
+    };
+
     if (this.startBtn) {
-      this.startBtnBound = () => this.startGame();
+      this.startBtnBound = blurAfter(() => this.startGame());
       this.startBtn.addEventListener('click', this.startBtnBound);
     }
     if (this.resumeBtn) {
-      this.resumeBtnBound = () => this.togglePause();
+      this.resumeBtnBound = blurAfter(() => this.togglePause());
       this.resumeBtn.addEventListener('click', this.resumeBtnBound);
     }
     if (this.restartBtn) {
-      this.restartBtnBound = () => this.restartGame();
+      this.restartBtnBound = blurAfter(() => this.restartGame());
       this.restartBtn.addEventListener('click', this.restartBtnBound);
+    }
+    if (this.muteBtn) {
+      this.muteBtnBound = blurAfter(() => this.toggleMute());
+      this.muteBtn.addEventListener('click', this.muteBtnBound);
     }
   }
 
@@ -142,11 +139,26 @@ export class CorgiRunnerGame {
     if (this.restartBtn && this.restartBtnBound) {
       this.restartBtn.removeEventListener('click', this.restartBtnBound);
     }
+    if (this.muteBtn && this.muteBtnBound) {
+      this.muteBtn.removeEventListener('click', this.muteBtnBound);
+    }
+    AudioSystem.stopMusic();
   }
 
   handleKeyDown(e) {
     const code = e.code || e.key;
     this.keysHeld[code] = true;
+    AudioSystem.unlock();
+
+    // Stop the page from scrolling on game keys
+    if ((code === 'Space' || code === 'ArrowUp' || code === 'ArrowDown') && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+
+    if (code === 'KeyM') {
+      this.toggleMute();
+      return;
+    }
 
     if (this.state === 'START') {
       if (code === 'Space' || code === 'Enter' || code === 'ArrowUp') {
@@ -186,6 +198,8 @@ export class CorgiRunnerGame {
   }
 
   handleTouchStart(e) {
+    AudioSystem.unlock();
+    if (e && e.cancelable && typeof e.preventDefault === 'function') e.preventDefault();
     if (this.state === 'START') {
       this.startGame();
       return;
@@ -230,8 +244,29 @@ export class CorgiRunnerGame {
     }
     if (this.state === 'PLAYING') {
       this.state = 'PAUSED';
+      AudioSystem.stopMusic();
       this.syncUI();
     }
+  }
+
+  /** Render the logical scene at `scale` device pixels per unit (HiDPI). */
+  setRenderScale(scale) {
+    this.renderScale = scale > 0 ? scale : 1;
+    this.background.setScale(this.renderScale);
+    this.entityManager.setScale(this.renderScale);
+  }
+
+  toggleMute() {
+    AudioSystem.toggleMute();
+    this.syncMuteButton();
+  }
+
+  syncMuteButton() {
+    if (!this.muteBtn) return;
+    const muted = AudioSystem.isMuted();
+    this.muteBtn.textContent = muted ? '🔇' : '🔊';
+    this.muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    this.muteBtn.title = muted ? 'Sound off (M)' : 'Sound on (M)';
   }
 
   startGame() {
@@ -241,6 +276,13 @@ export class CorgiRunnerGame {
     this.player.reset();
     this.entityManager.reset();
     this.particles.clear();
+    this.effects.clear();
+    this.background.reset();
+    this.nextMilestone = MILESTONE_EVERY;
+    this.isNewBest = false;
+    this.bestAtStart = Storage.getHighScore();
+    this.passedBest = false;
+    AudioSystem.startMusic();
     this.syncUI();
   }
 
@@ -251,21 +293,50 @@ export class CorgiRunnerGame {
   togglePause() {
     if (this.state === 'PLAYING') {
       this.state = 'PAUSED';
+      AudioSystem.stopMusic();
     } else if (this.state === 'PAUSED') {
       this.state = 'PLAYING';
+      AudioSystem.startMusic();
     }
     this.syncUI();
   }
 
   triggerGameOver() {
     this.state = 'GAMEOVER';
+    AudioSystem.stopMusic();
     AudioSystem.play('gameover');
+    const prevHigh = Storage.getHighScore();
     const newHigh = Storage.saveHighScore(this.score);
     this.highScore = newHigh;
+    this.isNewBest = Math.floor(this.score) > prevHigh && Math.floor(this.score) > 0;
+
+    // Crash feedback (cosmetic only)
+    this.player.dead = true;
+    const p = this.player;
+    this.effects.impact(p.x + p.width, p.y + p.height * 0.4);
+    this.effects.shake(9, 0.45);
+    this.effects.flash = 1;
+    this.effects.puff(p.x + p.width * 0.5, this.groundY, 12, { spread: 2.5, up: 70, back: 20, size: 6 });
+
     this.syncUI();
   }
 
+  /** Cosmetic animation that also runs outside of active play. */
+  animateScene(dt) {
+    if (this.state === 'PAUSED') return;
+    const playing = this.state === 'PLAYING';
+    const sceneSpeed = playing ? this.currentSpeed : this.state === 'START' ? 220 : 0;
+    this.background.update(dt, sceneSpeed, playing || this.state === 'START');
+    this.effects.update(dt, playing ? this.currentSpeed : 0);
+    if (!playing) {
+      this.player.runRate = 14;
+      this.player.animate(dt);
+      this.entityManager.animate(dt);
+    }
+  }
+
   update(dt) {
+    this.animateScene(dt);
     if (this.state !== 'PLAYING') return;
 
     // Continuous score accumulation
@@ -283,9 +354,11 @@ export class CorgiRunnerGame {
     };
 
     // Update Player & Entities
+    this.player.runRate = 12 + this.currentSpeed / 40;
     this.player.update(dt);
     this.entityManager.update(dt, this.currentSpeed);
     this.particles.update(dt);
+    this.updateMotionEffects(dt);
 
     const currPlayerBox = {
       x: this.player.x,
@@ -303,8 +376,12 @@ export class CorgiRunnerGame {
       if (e.type === 'treat') {
         if (Collision.check(currPlayerBox, e)) {
           this.score += e.points;
-          this.particles.emit(e.x + e.width / 2, e.y + e.height / 2, 12);
+          const cx = e.x + e.width / 2;
+          const cy = e.y + e.height / 2;
+          this.particles.emit(cx, cy, e.golden ? 24 : 12);
+          this.effects.text(cx, cy - 12, `+${e.points}`, e.golden ? '#ffd23f' : '#fff6c2', e.golden ? 24 : 18);
           AudioSystem.play('collect');
+          if (e.golden) AudioSystem.play('golden');
           entities.splice(i, 1); // remove collected treat
         }
       } else if (e.type === 'obstacle') {
@@ -314,6 +391,18 @@ export class CorgiRunnerGame {
       }
     }
 
+    // Milestones and beating your best
+    if (this.score >= this.nextMilestone) {
+      this.effects.showBanner(`${this.nextMilestone}!`, 'Good pup!');
+      AudioSystem.play('milestone');
+      this.nextMilestone += MILESTONE_EVERY;
+    }
+    if (!this.passedBest && this.bestAtStart > 0 && this.score > this.bestAtStart) {
+      this.passedBest = true;
+      this.effects.showBanner('NEW BEST!', 'Keep going!');
+      AudioSystem.play('bark');
+    }
+
     if (hitObstacle) {
       this.triggerGameOver();
     }
@@ -321,159 +410,60 @@ export class CorgiRunnerGame {
     this.syncUI();
   }
 
+  updateMotionEffects(dt) {
+    const p = this.player;
+    const feetX = p.x + 14;
+    if (p.justJumped) {
+      p.justJumped = false;
+      this.effects.puff(feetX + 10, this.groundY, 6, { up: 20, back: 40, size: 4 });
+    }
+    if (p.justLanded) {
+      p.justLanded = false;
+      this.effects.puff(feetX + 16, this.groundY, 9, { spread: 2, up: 35, back: 30, size: 5 });
+      AudioSystem.play('land');
+    }
+    if (p.isGrounded) {
+      this.dustTimer -= dt;
+      if (this.dustTimer <= 0) {
+        this.dustTimer = Math.max(0.035, 0.11 - this.currentSpeed / 9000);
+        this.effects.puff(feetX, this.groundY, 1, { up: 18, back: this.currentSpeed * 0.25, size: 3 });
+      }
+    }
+  }
+
   render() {
     if (!this.ctx) return;
 
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const s = this.renderScale;
 
-    ctx.clearRect(0, 0, w, h);
+    if (typeof ctx.setTransform === 'function') ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    if (s !== 1 && typeof ctx.setTransform === 'function') ctx.setTransform(s, 0, 0, s, 0, 0);
 
-    // --- 1. SKY GRADIENT ---
-    ctx.fillStyle = '#4A90D9';
-    ctx.fillRect(0, 0, w, this.groundY);
-    // Lighter near horizon
-    ctx.fillStyle = '#87CEEB';
-    ctx.fillRect(0, this.groundY * 0.5, w, this.groundY * 0.3);
-    ctx.fillStyle = '#B0E0F0';
-    ctx.fillRect(0, this.groundY * 0.8, w, this.groundY * 0.2);
-
-    // --- 2. MOUNTAINS (far layer) ---
-    if (this.state === 'PLAYING') {
-      this.mountainScroll += this.currentSpeed * 0.02 / 60;
-    }
     ctx.save();
-    ctx.fillStyle = '#5B7B99';
-    for (const m of this.mountains) {
-      const mx = ((m.x - this.mountainScroll) % (w + 200)) - 100;
-      const adjustedX = mx < -200 ? mx + w + 200 : mx;
-      ctx.beginPath();
-      ctx.moveTo(adjustedX, this.groundY);
-      ctx.lineTo(adjustedX + m.w / 2, this.groundY - m.peakH);
-      ctx.lineTo(adjustedX + m.w, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    }
-    // Snow caps
-    ctx.fillStyle = '#D6E8F0';
-    for (const m of this.mountains) {
-      const mx = ((m.x - this.mountainScroll) % (w + 200)) - 100;
-      const adjustedX = mx < -200 ? mx + w + 200 : mx;
-      if (m.peakH > 80) {
-        ctx.beginPath();
-        ctx.moveTo(adjustedX + m.w / 2 - 12, this.groundY - m.peakH + 15);
-        ctx.lineTo(adjustedX + m.w / 2, this.groundY - m.peakH);
-        ctx.lineTo(adjustedX + m.w / 2 + 12, this.groundY - m.peakH + 15);
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-    ctx.restore();
+    const shake = this.effects.shakeOffset;
+    if (shake.x || shake.y) ctx.translate(shake.x, shake.y);
 
-    // --- 3. HILLS (mid layer) ---
-    if (this.state === 'PLAYING') {
-      this.hillScroll += this.currentSpeed * 0.08 / 60;
-    }
-    ctx.save();
-    ctx.fillStyle = '#5A8F3F';
-    for (const hill of this.hills) {
-      const hx = ((hill.x - this.hillScroll) % (w + 150)) - 75;
-      const adjustedHx = hx < -150 ? hx + w + 150 : hx;
-      ctx.beginPath();
-      ctx.arc(adjustedHx, this.groundY, hill.r, Math.PI, 0);
-      ctx.fill();
-    }
-    // Trees on hills
-    ctx.fillStyle = '#2E7D32';
-    for (let i = 0; i < this.hills.length; i++) {
-      if (i % 2 === 0) {
-        const hill = this.hills[i];
-        const hx = ((hill.x - this.hillScroll) % (w + 150)) - 75;
-        const adjustedHx = hx < -150 ? hx + w + 150 : hx;
-        // Tree trunk
-        ctx.fillStyle = '#5D4037';
-        ctx.fillRect(adjustedHx - 2, this.groundY - hill.r - 10, 4, 12);
-        // Tree canopy
-        ctx.fillStyle = '#2E7D32';
-        ctx.beginPath();
-        ctx.arc(adjustedHx, this.groundY - hill.r - 16, 10, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    ctx.restore();
+    // Scenery
+    this.background.draw(ctx);
 
-    // --- 4. CLOUDS ---
-    if (this.state === 'PLAYING') {
-      this.cloudScroll += this.currentSpeed * 0.03 / 60;
-    }
-    ctx.save();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    for (const c of this.clouds) {
-      const cx = ((c.x - this.cloudScroll * c.speed * 10) % (w + 200)) - 100;
-      const adjustedCx = cx < -200 ? cx + w + 200 : cx;
-      // Multi-circle cloud
-      ctx.beginPath();
-      ctx.arc(adjustedCx, c.y, c.h * 0.7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(adjustedCx + c.w * 0.25, c.y - c.h * 0.2, c.h * 0.85, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(adjustedCx + c.w * 0.55, c.y, c.h * 0.65, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(adjustedCx - c.w * 0.15, c.y + c.h * 0.1, c.h * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-
-    // --- 5. GROUND ---
-    if (this.state === 'PLAYING') {
-      this.groundScroll += this.currentSpeed / 60;
-    }
-    const groundH = h - this.groundY;
-    // Grass top
-    ctx.fillStyle = '#4CAF50';
-    ctx.fillRect(0, this.groundY, w, 6);
-    // Main dirt
-    ctx.fillStyle = '#8D6E53';
-    ctx.fillRect(0, this.groundY + 6, w, groundH - 6);
-    // Lighter dirt stripe
-    ctx.fillStyle = '#A1887F';
-    ctx.fillRect(0, this.groundY + 14, w, 4);
-    // Dark bottom
-    ctx.fillStyle = '#5D4037';
-    ctx.fillRect(0, h - 8, w, 8);
-
-    // Scrolling pebbles / dirt details
-    ctx.fillStyle = '#795548';
-    const pebbleSpacing = 60;
-    for (let px = -(this.groundScroll % pebbleSpacing); px < w; px += pebbleSpacing) {
-      ctx.beginPath();
-      ctx.arc(px + 10, this.groundY + 24, 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(px + 35, this.groundY + 30, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Grass blades on surface
-    ctx.fillStyle = '#388E3C';
-    const grassSpacing = 18;
-    for (let gx = -(this.groundScroll % grassSpacing); gx < w; gx += grassSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(gx, this.groundY);
-      ctx.lineTo(gx + 2, this.groundY - 5);
-      ctx.lineTo(gx + 4, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // --- 6. RENDER GAME OBJECTS ---
+    // Gameplay layer
     this.entityManager.draw(ctx);
-    this.particles.draw(ctx);
+    this.effects.drawDust(ctx);
     this.player.draw(ctx);
+
+    // Colour grade so sprites match the time of day
+    this.background.drawGrade(ctx);
+
+    // Glowing / UI-ish things stay bright
+    this.background.drawFireflies(ctx);
+    this.particles.draw(ctx);
+    this.effects.drawSpeedLines(ctx);
+    ctx.restore();
+
+    this.background.drawVignette(ctx);
+    this.effects.drawOverlay(ctx);
   }
 
   stepFrame(dt = 0.01667) {
@@ -486,26 +476,38 @@ export class CorgiRunnerGame {
     const displayScore = Math.floor(this.score);
     const displayHigh = Math.floor(this.highScore);
 
-    if (this.scoreDisplay) this.scoreDisplay.textContent = `Score: ${displayScore}`;
-    if (this.highScoreDisplay) this.highScoreDisplay.textContent = `High Score: ${displayHigh}`;
-    if (this.finalScoreEl) this.finalScoreEl.textContent = `${displayScore}`;
-    if (this.gameOverHighScoreEl) this.gameOverHighScoreEl.textContent = `${displayHigh}`;
+    if (displayScore !== this.lastShownScore || displayHigh !== this.lastShownHigh) {
+      if (this.scoreDisplay) this.scoreDisplay.textContent = `Score: ${displayScore}`;
+      if (this.highScoreDisplay) this.highScoreDisplay.textContent = `High Score: ${displayHigh}`;
+      if (this.finalScoreEl) this.finalScoreEl.textContent = `${displayScore}`;
+      if (this.gameOverHighScoreEl) this.gameOverHighScoreEl.textContent = `${displayHigh}`;
+      this.lastShownScore = displayScore;
+      this.lastShownHigh = displayHigh;
+    }
+
+    if (this.speedFill) {
+      const pct = ((this.currentSpeed - this.baseSpeed) / (this.maxSpeed - this.baseSpeed)) * 100;
+      this.speedFill.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
+    }
+    if (this.newBestEl) {
+      this.newBestEl.classList.toggle('hidden', !(this.state === 'GAMEOVER' && this.isNewBest));
+    }
 
     // Manage Overlays
     if (this.startScreen) {
-      this.startScreen.style.display = this.state === 'START' ? 'block' : 'none';
+      this.startScreen.style.display = this.state === 'START' ? 'flex' : 'none';
       if (this.state === 'START') this.startScreen.classList.remove('hidden');
       else this.startScreen.classList.add('hidden');
     }
 
     if (this.pauseOverlay) {
-      this.pauseOverlay.style.display = this.state === 'PAUSED' ? 'block' : 'none';
+      this.pauseOverlay.style.display = this.state === 'PAUSED' ? 'flex' : 'none';
       if (this.state === 'PAUSED') this.pauseOverlay.classList.remove('hidden');
       else this.pauseOverlay.classList.add('hidden');
     }
 
     if (this.gameOverScreen) {
-      this.gameOverScreen.style.display = this.state === 'GAMEOVER' ? 'block' : 'none';
+      this.gameOverScreen.style.display = this.state === 'GAMEOVER' ? 'flex' : 'none';
       if (this.state === 'GAMEOVER') this.gameOverScreen.classList.remove('hidden');
       else this.gameOverScreen.classList.add('hidden');
     }
